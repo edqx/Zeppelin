@@ -2,23 +2,23 @@ const std = @import("std");
 const zigNetwork = @import("zig-network");
 const Socket = zigNetwork.Socket;
 const EndPoint = zigNetwork.EndPoint;
-const ConnectionPool = @import("./ConnectionPool.zig");
+const ConnectionManager = @import("./ConnectionManager.zig");
 const rootPackets = @import("./rootPackets.zig");
 
 const Zeppelin = @This();
 
 socket: Socket,
 
-connections: ConnectionPool,
+connections: ConnectionManager,
 
 pub fn init(allocator: std.mem.Allocator) !Zeppelin {
     return Zeppelin{
         .socket = try Socket.create(.ipv4, .udp),
-        .connections = ConnectionPool.init(allocator)
+        .connections = ConnectionManager.init(allocator)
     };
 }
 
-pub fn deinit(self: Zeppelin) void {
+pub fn deinit(self: *Zeppelin) void {
     self.socket.close();
     self.connections.deinit();
 }

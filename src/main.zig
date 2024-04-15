@@ -6,5 +6,7 @@ pub fn main() !void {
     var server = try Zeppelin.init(gpa.allocator());
     try server.bind();
     try server.listen();
+
+    server.deinit();
     _ = gpa.deinit();
 }

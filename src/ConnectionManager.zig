@@ -26,26 +26,31 @@ pub const Connection = struct {
     }
 };
 
-const ConnectionPool = @This();
+const ConnectionManager = @This();
 
 allocator: std.mem.Allocator,
 pool: std.heap.MemoryPool(Connection),
 
 connections: std.AutoHashMap(EndPoint, *Connection),
 
-pub fn init(allocator: std.mem.Allocator) ConnectionPool {
-    return ConnectionPool{
+pub fn init(allocator: std.mem.Allocator) ConnectionManager {
+    return ConnectionManager{
         .allocator = allocator,
         .pool = std.heap.MemoryPool(Connection).init(allocator),
         .connections = std.AutoHashMap(EndPoint, *Connection).init(allocator)
     };
 }
 
-pub fn deinit(self: ConnectionPool) void {
+pub fn deinit(self: *ConnectionManager) void {
+    var connectionsIterator = self.connections.valueIterator();
+    while (connectionsIterator.next()) |connection| {
+        connection.*.deinit();
+    }
+    self.connections.deinit();
     self.pool.deinit();
 }
 
-pub fn acceptConnection(self: *ConnectionPool, endpoint: EndPoint) !*Connection {
+pub fn acceptConnection(self: *ConnectionManager, endpoint: EndPoint) !*Connection {
     if (self.connections.get(endpoint)) |existingConnection| return existingConnection;
 
     const arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -54,11 +59,11 @@ pub fn acceptConnection(self: *ConnectionPool, endpoint: EndPoint) !*Connection 
     connection.* = Connection.init(arena, endpoint);
     try self.connections.put(endpoint, connection);
     
-    std.log.info("[ConnectionPool] accepted connection from {}", .{ endpoint });
+    std.log.info("[ConnectionManager] accepted connection from {}", .{ endpoint });
     return connection;
 }
 
-pub fn removeConnection(self: *ConnectionPool, connection: *Connection) !void {
+pub fn removeConnection(self: *ConnectionManager, connection: *Connection) !void {
     self.connections.remove(connection.endpoint);
     connection.deinit();
     self.pool.destroy(connection);
