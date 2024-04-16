@@ -153,7 +153,7 @@ pub fn listen(self: *Zeppelin) !void {
                 const nonce = try reader.readInt(u16, .big);
                 try self.sendAcknowledge(connection, nonce);
 
-                const reliablePacket = try rootPackets.ReliablePacket.initFromReader(connection.arena.allocator(), &reader);
+                const reliablePacket = try rootPackets.ReliablePacket.initFromReader(connection.arena.allocator(), reader);
                 defer reliablePacket.deinit();
                 
 
@@ -165,7 +165,7 @@ pub fn listen(self: *Zeppelin) !void {
                 }
                 const nonce = try reader.readInt(u16, .big);
                 var arena = std.heap.ArenaAllocator.init(self.connections.allocator);
-                const hello = try rootPackets.HelloPacket.initFromReader(arena.allocator(), &reader);
+                const hello = try rootPackets.HelloPacket.initFromReader(arena.allocator(), reader);
                 errdefer hello.destroy();
 
                 const connection = try self.connections.acceptConnection(arena, recv.sender, .{

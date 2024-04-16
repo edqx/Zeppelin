@@ -55,7 +55,7 @@ pub const PlatformData = struct {
     platformName: []const u8,
     platformId: ?u64,
 
-    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !PlatformData {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: std.io.AnyReader) !PlatformData {
         var platformData: PlatformData = undefined;
         platformData.maybeAllocator = allocator;
 
@@ -64,7 +64,7 @@ pub const PlatformData = struct {
         var subReader = message.reader();
 
         platformData.platform = @enumFromInt(message.tag);
-        platformData.platformName = try streamHelpers.readString(allocator, &subReader);
+        platformData.platformName = try streamHelpers.readString(allocator, subReader);
         platformData.platformId = switch (platformData.platform) {
             .playstation, .xbox => try subReader.readInt(u64, .little),
             else => null
@@ -125,7 +125,7 @@ pub const ReliablePacket = struct {
 
     messages: []streamHelpers.Message,
 
-    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !ReliablePacket {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: std.io.AnyReader) !ReliablePacket {
         var packet: ReliablePacket = undefined;
         packet.maybeAllocator = allocator;
 
@@ -165,7 +165,7 @@ pub const HelloPacket = struct {
     platformData: PlatformData,
     friendCode: []const u8,
 
-    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !HelloPacket {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: std.io.AnyReader) !HelloPacket {
         var packet: HelloPacket = undefined;
         packet.maybeAllocator = allocator;
 
@@ -205,7 +205,7 @@ pub const DisconnectPacket = struct {
     reason: DisconnectReason,
     maybeCustomMessage: ?[]const u8,
 
-    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !DisconnectPacket {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: std.io.AnyReader) !DisconnectPacket {
         var packet: DisconnectPacket = undefined;
         packet.maybeAllocator = allocator;
 

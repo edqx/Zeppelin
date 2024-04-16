@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn readPacked(reader: *std.io.AnyReader) !u32 {
+pub fn readPacked(reader: std.io.AnyReader) !u32 {
     var out: u32 = 0;
     var shift: u3 = 0;
     while (true) : (shift += 7) {  
@@ -11,7 +11,7 @@ pub fn readPacked(reader: *std.io.AnyReader) !u32 {
     return out;
 }
 
-pub fn readString(allocator: std.mem.Allocator, reader: *std.io.AnyReader) ![]const u8 {
+pub fn readString(allocator: std.mem.Allocator, reader: std.io.AnyReader) ![]const u8 {
     const strLen = try readPacked(reader);
     const buffer = try allocator.alloc(u8, strLen);
     try reader.readNoEof(buffer);
@@ -24,7 +24,7 @@ pub const Message = struct {
     tag: u8,
     stream: std.io.FixedBufferStream([]u8),
 
-    pub fn initFromReader(allocator: std.mem.Allocator, reader2: *std.io.AnyReader) !Message {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader2: std.io.AnyReader) !Message {
         var message: Message = undefined;
         message.maybeAllocator = allocator;
 
