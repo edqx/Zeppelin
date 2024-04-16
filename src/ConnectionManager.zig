@@ -54,16 +54,28 @@ pub const ReliableMessagesBuffer = struct {
     }
 };
 
+pub const ConnectionInfo = struct {
+    id: u32,
+    name: []const u8,
+    platform: rootPackets.Platform,
+    language: rootPackets.SupportedLangs,
+    chatMode: rootPackets.ChatMode
+};
+
 pub const Connection = struct {
     arena: std.heap.ArenaAllocator,
+
     endpoint: EndPoint,
+    info: ConnectionInfo,
+
     outgoingNonce: u16,
     reliableMessagesBuffer: ReliableMessagesBuffer,
 
-    pub fn init(arena: std.heap.ArenaAllocator, endpoint: EndPoint) Connection {
+    pub fn init(arena: std.heap.ArenaAllocator, endpoint: EndPoint, info: ConnectionInfo) Connection {
         return Connection{
             .arena = arena,
             .endpoint = endpoint,
+            .info = info,
             .outgoingNonce = 1,
             .reliableMessagesBuffer = ReliableMessagesBuffer.init()
         };
@@ -72,10 +84,15 @@ pub const Connection = struct {
     pub fn deinit(self: Connection) void {
         self.arena.deinit();
     }
+    
+    pub fn format(value: Connection, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: std.io.AnyWriter) !void {
+        _ = fmt; _ = options;
+        try writer.print("{s} (id: {}, lang: {}, addr: {})", .{ value.info.name, value.info.id, value.info.language, value.endpoint });
+    }
 
     pub fn takeNonce(self: *Connection) u16 {
         const tmp = self.outgoingNonce;
-        self.outgoingNonce += 1;
+        self.outgoingNonce = @addWithOverflow(self.outgoingNonce, 1)[0];
         return tmp;
     }
 };
@@ -85,6 +102,8 @@ const ConnectionManager = @This();
 allocator: std.mem.Allocator,
 pool: std.heap.MemoryPool(Connection),
 
+connectionId: u32,
+
 connections: std.AutoHashMap(EndPoint, *Connection),
 connectionsMutex: std.Thread.Mutex,
 
@@ -92,6 +111,7 @@ pub fn init(allocator: std.mem.Allocator) ConnectionManager {
     return ConnectionManager{
         .allocator = allocator,
         .pool = std.heap.MemoryPool(Connection).init(allocator),
+        .connectionId = 1,
         .connections = std.AutoHashMap(EndPoint, *Connection).init(allocator),
         .connectionsMutex = .{}
     };
@@ -106,18 +126,22 @@ pub fn deinit(self: *ConnectionManager) void {
     self.pool.deinit();
 }
 
-pub fn acceptConnection(self: *ConnectionManager, endpoint: EndPoint) !*Connection {
-    const arena = std.heap.ArenaAllocator.init(self.allocator);
+pub fn takeConnectionId(self: *ConnectionManager) u32 {
+    const tmp = self.connectionId;
+    self.connectionId = @addWithOverflow(self.connectionId, 1)[0];
+    return tmp;
+}
 
+pub fn acceptConnection(self: *ConnectionManager, arena: std.heap.ArenaAllocator, endpoint: EndPoint, info: ConnectionInfo) !*Connection {
     const connection = try self.pool.create();
-    connection.* = Connection.init(arena, endpoint);
+    connection.* = Connection.init(arena, endpoint, info);
 
     self.connectionsMutex.lock();
     defer self.connectionsMutex.unlock();
 
     try self.connections.put(endpoint, connection);
     
-    std.log.info("[ConnectionManager] accepted connection from {}", .{ endpoint });
+    std.log.info("[ConnectionManager] accepted connection from {}", .{ connection.* });
     return connection;
 }
 

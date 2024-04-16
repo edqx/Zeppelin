@@ -106,18 +106,32 @@ pub fn listen(self: *Zeppelin) !void {
                 const connection = maybeExistingConnection orelse continue;
                 const nonce = try reader.readInt(u16, .big);
                 try self.sendAcknowledge(connection, nonce);
+
+                const reliablePacket = try rootPackets.ReliablePacket.initFromReader(connection.arena.allocator(), &reader);
+                defer reliablePacket.deinit();
+                
+
             },
             .hello => {
                 if (maybeExistingConnection) |existingConnection| {
-                    std.log.warn("[Zeppelin] Got double handshake from {}", .{ existingConnection.endpoint });
+                    std.log.warn("[Zeppelin] Got double handshake from {}", .{ existingConnection.* });
                     return;
                 }
-                const connection = try self.connections.acceptConnection(recv.sender);
                 const nonce = try reader.readInt(u16, .big);
-                const hello = try rootPackets.HelloPacket.read(connection.arena.allocator(), &reader);
+                var arena = std.heap.ArenaAllocator.init(self.connections.allocator);
+                const hello = try rootPackets.HelloPacket.initFromReader(arena.allocator(), &reader);
                 errdefer hello.destroy();
 
+                const connection = try self.connections.acceptConnection(arena, recv.sender, .{
+                    .id = self.connections.takeConnectionId(),
+                    .name = hello.customizationName,
+                    .language = hello.currentLanguage,
+                    .platform = hello.platformData.platform,
+                    .chatMode = hello.chatMode
+                });
+
                 try self.sendAcknowledge(connection, nonce);
+                hello.platformData.destroy(); // there's no "non-error defer", and we don't need the platform data name anymore, so we'll just destroy the platform data here
             },
             .disconnect => {
 

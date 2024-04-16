@@ -55,7 +55,7 @@ pub const PlatformData = struct {
     platformName: []const u8,
     platformId: ?u64,
 
-    pub fn read(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !PlatformData {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !PlatformData {
         var platformData: PlatformData = undefined;
         platformData.allocator = allocator;
 
@@ -78,6 +78,37 @@ pub const PlatformData = struct {
     }
 };
 
+pub const ReliablePacket = struct {
+    allocator: std.mem.Allocator,
+    messages: []streamHelpers.Message,
+
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !ReliablePacket {
+        var packet: ReliablePacket = undefined;
+        packet.allocator = allocator;
+
+        var list = std.ArrayList(streamHelpers.Message).init(allocator);
+        defer list.deinit();
+
+        while (true) {
+            const message = streamHelpers.Message.read(allocator, reader) catch |e| {
+                if (e == error.EndOfStream) break;
+                return e;
+            };
+            try list.append(message);
+        }
+
+        packet.messages = try list.toOwnedSlice();
+        return packet;
+    }
+
+    pub fn deinit(self: ReliablePacket) void {
+        for (self.messages) |message| {
+            message.destroy();
+        }
+        self.allocator.free(self.messages);
+    }
+};
+
 pub const HelloPacket = struct {
     allocator: std.mem.Allocator,
     broadcastVersion: i32,
@@ -88,7 +119,7 @@ pub const HelloPacket = struct {
     platformData: PlatformData,
     friendCode: []const u8,
 
-    pub fn read(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !HelloPacket {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !HelloPacket {
         var packet: HelloPacket = undefined;
         packet.allocator = allocator;
 
@@ -103,7 +134,7 @@ pub const HelloPacket = struct {
         packet.currentLanguage = try reader.readEnum(SupportedLangs, .little);
         packet.chatMode = try reader.readEnum(ChatMode, .little);
 
-        packet.platformData = try PlatformData.read(allocator, reader);
+        packet.platformData = try PlatformData.initFromReader(allocator, reader);
         errdefer packet.platformData.destroy();
 
         packet.friendCode = try streamHelpers.readString(allocator, reader);
@@ -115,5 +146,6 @@ pub const HelloPacket = struct {
     pub fn destroy(self: HelloPacket) void {
         self.allocator.free(self.customizationName);
         self.allocator.free(self.friendCode);
+        self.platformData.destroy();
     }
 };
