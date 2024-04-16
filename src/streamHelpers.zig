@@ -11,13 +11,10 @@ pub fn readPacked(reader: *std.io.AnyReader) !u32 {
     return out;
 }
 
-pub const StreamError = error { InvalidLength };
-
 pub fn readString(allocator: std.mem.Allocator, reader: *std.io.AnyReader) ![]const u8 {
     const strLen = try readPacked(reader);
     const buffer = try allocator.alloc(u8, strLen);
-    const bytesRead = try reader.read(buffer);
-    if (bytesRead != strLen) return StreamError.InvalidLength;
+    try reader.readNoEof(buffer);
     return buffer;
 }
 
@@ -38,8 +35,7 @@ pub const Message = struct {
         message.tag = try reader2.readByte();
         message.buffer = try allocator.alloc(u8, message.length);
         message.stream = std.io.fixedBufferStream(message.buffer);
-        const bytesRead = try reader2.read(message.buffer);
-        if (bytesRead != message.length) return StreamError.InvalidLength;
+        try reader2.readNoEof(message.buffer);
         return message;
     }
 
