@@ -154,6 +154,7 @@ pub fn getExistingConnection(self: *ConnectionManager, endpoint: EndPoint) ?*Con
 
 pub fn removeConnection(self: *ConnectionManager, connection: *Connection) !void {
     _ = self.connections.remove(connection.endpoint);
+    std.log.info("[ConnectionManager] Removed {}", .{ connection });
     connection.deinit();
     self.pool.destroy(connection);
 }

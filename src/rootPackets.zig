@@ -216,7 +216,7 @@ pub const DisconnectPacket = struct {
 
         const message = try streamHelpers.Message.initFromReader(allocator, reader);
         var reader2 = message.reader();
-        packet.reason = @enumFromInt(message.tag);
+        packet.reason = try reader2.readEnum(DisconnectReason, .little);
 
         packet.maybeCustomMessage = switch (packet.reason) {
             .custom => try streamHelpers.readString(allocator, &reader2),

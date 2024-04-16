@@ -113,17 +113,20 @@ pub fn sendDisconnect(self: *Zeppelin, connection: *ConnectionManager.Connection
             defer messageBuffer.relinquish();
 
             var messageStream = std.io.fixedBufferStream(messageBuffer.bytes);
-            _ = try messageStream.writer().any().write(customMessage);
+            const messageWriter = messageStream.writer().any();
+            _ = try messageWriter.write(customMessage);
+            try messageWriter.writeByte(@intFromEnum(reason));
 
-            const message = streamHelpers.Message{ .tag = @intFromEnum(reason), .stream = messageStream };
+            const message = streamHelpers.Message{ .tag = 0, .stream = messageStream };
             try message.write(writer);
         } else {
-            const message = streamHelpers.Message{ .tag = @intFromEnum(reason), .stream = std.io.fixedBufferStream(@constCast(&[_]u8{})) };
+            const message = streamHelpers.Message{ .tag = 0, .stream = std.io.fixedBufferStream(@constCast(&[_]u8{ @intFromEnum(reason) })) };
             try message.write(writer);
         }
     }
 
     _ = try self.socket.sendTo(connection.endpoint, buffer.bytes[0..stream.pos]);
+    try self.connections.removeConnection(connection);
 }
 
 pub fn listen(self: *Zeppelin) !void {
@@ -139,6 +142,8 @@ pub fn listen(self: *Zeppelin) !void {
         const maybeExistingConnection = self.connections.getExistingConnection(recv.sender);
 
         const opcode: rootPackets.Opcode = try reader.readEnum(rootPackets.Opcode, .little);
+        std.log.info("Client -> Server: Opcode: {} ({} bytes)", .{ opcode, recv.numberOfBytes });
+
         switch (opcode) {
             .unreliable => {
 
@@ -172,6 +177,7 @@ pub fn listen(self: *Zeppelin) !void {
                 });
 
                 try self.sendAcknowledge(connection, nonce);
+                try self.sendDisconnect(connection, .custom, "I hate you");
                 hello.platformData.destroy(); // there's no "non-error defer", and we don't need the platform data name anymore, so we'll just destroy the platform data here
             },
             .disconnect => {
@@ -189,7 +195,6 @@ pub fn listen(self: *Zeppelin) !void {
                 try self.sendAcknowledge(connection, nonce);
             }
         }
-        std.log.info("Opcode: {}", .{ opcode });
     }
 
     stopPingerSignal = true;
