@@ -3,13 +3,17 @@ const zigNetwork = @import("zig-network");
 const Socket = zigNetwork.Socket;
 const EndPoint = zigNetwork.EndPoint;
 const ConnectionManager = @import("./ConnectionManager.zig");
+const LobbyManager = @import("./LobbyManager.zig");
+const Lobby = @import("./Lobby.zig");
 const rootPackets = @import("./rootPackets.zig");
+const rootMessages = @import("./rootMessages.zig");
 const streamHelpers = @import("./streamHelpers.zig");
 const BufferPool = @import("./BufferPool.zig");
 
 const Zeppelin = @This();
 socket: Socket,
 connections: ConnectionManager,
+lobbies: LobbyManager,
 
 bufferPool: BufferPool,
 
@@ -17,6 +21,7 @@ pub fn init(allocator: std.mem.Allocator) !Zeppelin {
     return Zeppelin{
         .socket = try Socket.create(.ipv4, .udp),
         .connections = ConnectionManager.init(allocator),
+        .lobbies = LobbyManager.init(allocator),
         .bufferPool = BufferPool.init(allocator, std.heap.ArenaAllocator.init(allocator))
     };
 }
@@ -142,7 +147,7 @@ pub fn listen(self: *Zeppelin) !void {
         const maybeExistingConnection = self.connections.getExistingConnection(recv.sender);
 
         const opcode: rootPackets.Opcode = try reader.readEnum(rootPackets.Opcode, .little);
-        std.log.info("Client -> Server: Opcode: {} ({} bytes)", .{ opcode, recv.numberOfBytes });
+        // std.log.info("Client -> Server: Opcode: {} ({} bytes)", .{ opcode, recv.numberOfBytes });
 
         switch (opcode) {
             .unreliable => {
@@ -156,7 +161,15 @@ pub fn listen(self: *Zeppelin) !void {
                 const reliablePacket = try rootPackets.ReliablePacket.initFromReader(connection.arena.allocator(), reader);
                 defer reliablePacket.deinit();
                 
-
+                for (reliablePacket.messages) |message| {
+                    switch (try std.meta.intToEnum(rootMessages.RootMessageTag, message.tag)) {
+                        .hostGame => {
+                            const lobby = try self.lobbies.openLobby();
+                            _ = lobby;
+                        },
+                        else => |tag| std.log.warn("[Zeppelin] unhandled root message {}", .{ tag })
+                    }
+                }
             },
             .hello => {
                 if (maybeExistingConnection) |existingConnection| {
@@ -177,7 +190,6 @@ pub fn listen(self: *Zeppelin) !void {
                 });
 
                 try self.sendAcknowledge(connection, nonce);
-                try self.sendDisconnect(connection, .custom, "I hate you");
                 hello.platformData.destroy(); // there's no "non-error defer", and we don't need the platform data name anymore, so we'll just destroy the platform data here
             },
             .disconnect => {

@@ -4,7 +4,7 @@ const EndPoint = zigNetwork.EndPoint;
 const rootPackets = @import("./rootPackets.zig");
 const BufferPool = @import("./BufferPool.zig");
 
-pub const SentMessage = struct {
+pub const MessageRecord = struct {
     opcode: rootPackets.Opcode,
     nonce: u16,
     buffer: *BufferPool.Buffer,
@@ -17,7 +17,7 @@ pub const ReliableMessagesBuffer = struct {
     pub const Size = 8;
     pub const BufferIndex = std.meta.Int(.unsigned, std.math.log2_int_ceil(usize, Size) + 2);
 
-    reliableMessages: [Size]SentMessage,
+    reliableMessages: [Size]MessageRecord,
     cursor: BufferIndex,
     max: BufferIndex,
 
@@ -47,7 +47,7 @@ pub const ReliableMessagesBuffer = struct {
         }
     }
 
-    pub fn appendMessage(self: *ReliableMessagesBuffer, message: SentMessage) void {
+    pub fn appendMessage(self: *ReliableMessagesBuffer, message: MessageRecord) void {
         self.reliableMessages[self.cursor] = message;
         self.cursor = (self.cursor + 1) % Size;
         self.max = @min(Size, self.max + 1);
