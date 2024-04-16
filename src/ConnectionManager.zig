@@ -31,7 +31,7 @@ pub const ReliableMessagesBuffer = struct {
 
     pub fn isDead(self: ReliableMessagesBuffer, maximumSentAt: u64) bool {
         return inline for (0.., self.reliableMessages) |i, message| {
-            if (i >= self.max) return;
+            if (i >= self.max) break false;
             if (message.sentAt <= maximumSentAt and message.acknowledged) break false;
         } else true;
     }
@@ -41,7 +41,7 @@ pub const ReliableMessagesBuffer = struct {
             if (i >= self.max) return;
             if (message.nonce == nonce) {
                 message.acknowledged = true;
-                try message.buffer.relinquish();
+                message.buffer.relinquish();
                 break;
             }
         }
@@ -67,6 +67,8 @@ pub const Connection = struct {
 
     endpoint: EndPoint,
     info: ConnectionInfo,
+    
+    disconnected: bool,
 
     outgoingNonce: u16,
     reliableMessagesBuffer: ReliableMessagesBuffer,
@@ -76,6 +78,7 @@ pub const Connection = struct {
             .arena = arena,
             .endpoint = endpoint,
             .info = info,
+            .disconnected = false,
             .outgoingNonce = 1,
             .reliableMessagesBuffer = ReliableMessagesBuffer.init()
         };
@@ -84,7 +87,7 @@ pub const Connection = struct {
     pub fn deinit(self: Connection) void {
         self.arena.deinit();
     }
-    
+
     pub fn format(value: Connection, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: std.io.AnyWriter) !void {
         _ = fmt; _ = options;
         try writer.print("{s} (id: {}, lang: {}, addr: {})", .{ value.info.name, value.info.id, value.info.language, value.endpoint });
@@ -150,7 +153,7 @@ pub fn getExistingConnection(self: *ConnectionManager, endpoint: EndPoint) ?*Con
 }
 
 pub fn removeConnection(self: *ConnectionManager, connection: *Connection) !void {
-    self.connections.remove(connection.endpoint);
+    _ = self.connections.remove(connection.endpoint);
     connection.deinit();
     self.pool.destroy(connection);
 }

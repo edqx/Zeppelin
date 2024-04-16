@@ -19,28 +19,32 @@ pub fn readString(allocator: std.mem.Allocator, reader: *std.io.AnyReader) ![]co
 }
 
 pub const Message = struct {
-    allocator: std.mem.Allocator,
+    maybeAllocator: ?std.mem.Allocator = null,
 
     tag: u8,
-    length: u16,
-    buffer: []u8,
-
     stream: std.io.FixedBufferStream([]u8),
 
-    pub fn read(allocator: std.mem.Allocator, reader2: *std.io.AnyReader) !Message {
+    pub fn initFromReader(allocator: std.mem.Allocator, reader2: *std.io.AnyReader) !Message {
         var message: Message = undefined;
-        message.allocator = allocator;
+        message.maybeAllocator = allocator;
 
-        message.length = try reader2.readInt(u16, .little);
+        const length = try reader2.readInt(u16, .little);
         message.tag = try reader2.readByte();
-        message.buffer = try allocator.alloc(u8, message.length);
-        message.stream = std.io.fixedBufferStream(message.buffer);
-        try reader2.readNoEof(message.buffer);
+        const buffer = try allocator.alloc(u8, length);
+        message.stream = std.io.fixedBufferStream(buffer);
+        try reader2.readNoEof(message.stream.buffer);
         return message;
     }
 
+    pub fn write(self: Message, writer: std.io.AnyWriter) !void {
+        try writer.writeInt(u16, @intCast(self.stream.buffer.len), .little);
+        try writer.writeInt(u8, self.tag, .little);
+        _ = try writer.write(self.stream.buffer);
+    }
+
     pub fn destroy(self: Message) void {
-        self.allocator.free(self.buffer);
+        const allocator = self.maybeAllocator orelse return;
+        allocator.free(self.stream.buffer);
     }
 
     pub fn reader(self: *Message) std.io.AnyReader {

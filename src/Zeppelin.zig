@@ -4,6 +4,7 @@ const Socket = zigNetwork.Socket;
 const EndPoint = zigNetwork.EndPoint;
 const ConnectionManager = @import("./ConnectionManager.zig");
 const rootPackets = @import("./rootPackets.zig");
+const streamHelpers = @import("./streamHelpers.zig");
 const BufferPool = @import("./BufferPool.zig");
 
 const Zeppelin = @This();
@@ -37,6 +38,14 @@ pub fn doHealthCheck(self: *Zeppelin) !void {
     while (iterateConnections.next()) |connectionPtr| {
         const connection = connectionPtr.*;
         std.log.info("[Pinger] Pinging {}..", .{ connection.endpoint });
+
+        if (connection.reliableMessagesBuffer.isDead(@as(u64, @intCast(std.time.milliTimestamp())) - 1500)) {
+            try self.sendDisconnect(connection, .custom, "bruh you are not responding to my messages!!!!!");
+            try self.connections.removeConnection(connection);
+            connection.disconnected = true;
+            continue;
+        }
+
         try self.sendPing(connection);
     }
 }
@@ -66,7 +75,7 @@ pub fn sendPing(self: *Zeppelin, connection: *ConnectionManager.Connection) !voi
         .nonce = nonce,
         .buffer = buffer,
         .length = stream.pos,
-        .sentAt = @intCast(std.time.microTimestamp()),
+        .sentAt = @intCast(std.time.milliTimestamp()),
         .acknowledged = false
     });
 
@@ -75,12 +84,44 @@ pub fn sendPing(self: *Zeppelin, connection: *ConnectionManager.Connection) !voi
 
 pub fn sendAcknowledge(self: *Zeppelin, connection: *ConnectionManager.Connection, nonce: u16) !void {
     const buffer = try self.bufferPool.take(3);
+    defer buffer.relinquish();
+
     var stream = std.io.fixedBufferStream(buffer.bytes);
     const writer = stream.writer().any();
 
     try writer.writeByte(@intFromEnum(rootPackets.Opcode.acknowledge));
     try writer.writeInt(u16, nonce, .big);
     try writer.writeByte(0xff);
+
+    _ = try self.socket.sendTo(connection.endpoint, buffer.bytes[0..stream.pos]);
+}
+
+pub fn sendDisconnect(self: *Zeppelin, connection: *ConnectionManager.Connection, maybeReason: ?rootPackets.DisconnectReason, maybeCustomMessage: ?[]const u8) !void {
+    const buffer = try self.bufferPool.take(128);
+    defer buffer.relinquish();
+
+    var stream = std.io.fixedBufferStream(buffer.bytes);
+    const writer = stream.writer().any();
+
+    try writer.writeByte(@intFromEnum(rootPackets.Opcode.disconnect));
+
+    if (maybeReason) |reason| {
+        try writer.writeByte(1); // show reason
+
+        if (maybeCustomMessage) |customMessage| {
+            const messageBuffer = try self.bufferPool.take(customMessage.len);
+            defer messageBuffer.relinquish();
+
+            var messageStream = std.io.fixedBufferStream(messageBuffer.bytes);
+            _ = try messageStream.writer().any().write(customMessage);
+
+            const message = streamHelpers.Message{ .tag = @intFromEnum(reason), .stream = messageStream };
+            try message.write(writer);
+        } else {
+            const message = streamHelpers.Message{ .tag = @intFromEnum(reason), .stream = std.io.fixedBufferStream(@constCast(&[_]u8{})) };
+            try message.write(writer);
+        }
+    }
 
     _ = try self.socket.sendTo(connection.endpoint, buffer.bytes[0..stream.pos]);
 }
@@ -134,7 +175,8 @@ pub fn listen(self: *Zeppelin) !void {
                 hello.platformData.destroy(); // there's no "non-error defer", and we don't need the platform data name anymore, so we'll just destroy the platform data here
             },
             .disconnect => {
-
+                const connection = maybeExistingConnection orelse continue;
+                try self.sendDisconnect(connection, null, null);
             },
             .acknowledge => {
                 const connection = maybeExistingConnection orelse continue;

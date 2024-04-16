@@ -9,8 +9,8 @@ pub const Buffer = struct {
     bytes: []u8,
     inUse: bool,
 
-    pub fn relinquish(self: *Buffer) !void {
-        try self.pool.relinquish(self);
+    pub fn relinquish(self: *Buffer) void {
+        self.pool.relinquish(self);
     }
 };
 
@@ -66,9 +66,9 @@ pub fn take(self: *BufferPool, size: usize) !*Buffer {
     return buffer;
 }
 
-pub fn relinquish(self: *BufferPool, buffer: *Buffer) !void {
+pub fn relinquish(self: *BufferPool, buffer: *Buffer) void {
     self.buffersMutex.lock();
     defer self.buffersMutex.unlock();
     buffer.inUse = false;
-    try self.freeBuffers.append(buffer);
+    self.freeBuffers.append(buffer) catch |e| std.debug.panic("{}", .{ e });
 }

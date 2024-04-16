@@ -49,7 +49,7 @@ pub const Platform = enum(u8) {
 };
 
 pub const PlatformData = struct {
-    allocator: std.mem.Allocator,
+    maybeAllocator: ?std.mem.Allocator = null,
 
     platform: Platform,
     platformName: []const u8,
@@ -57,9 +57,9 @@ pub const PlatformData = struct {
 
     pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !PlatformData {
         var platformData: PlatformData = undefined;
-        platformData.allocator = allocator;
+        platformData.maybeAllocator = allocator;
 
-        var message = try streamHelpers.Message.read(allocator, reader);
+        var message = try streamHelpers.Message.initFromReader(allocator, reader);
         defer message.destroy();
         var subReader = message.reader();
 
@@ -74,23 +74,66 @@ pub const PlatformData = struct {
     }
 
     pub fn destroy(self: PlatformData) void {
-        self.allocator.free(self.platformName);
+        const allocator = self.maybeAllocator orelse return;
+
+        allocator.free(self.platformName);
     }
 };
 
+pub const DisconnectReason = enum(u8) {
+    exitGame,
+	gameFull,
+	gameStarted,
+	gameNotFound,
+	incorrectVersion = 5,
+	banned,
+	kicked,
+	custom,
+	invalidName,
+	hacking,
+	notAuthorized,
+	destroy = 16,
+	unknownError,
+	incorrectGame,
+	serverRequest,
+	serverFull,
+	internalPlayerMissing = 100,
+	internalNonceFailure,
+	internalConnectionToken,
+	platformLock,
+	lobbyInactivity,
+	matchmakerInactivity,
+	invalidGameOptions,
+	noServersAvailable,
+	quickmatchDisabled,
+	tooManyGames,
+	quickchatLock,
+	matchmakerFull,
+	sanctions,
+	serverError,
+	selfPlatformLock,
+	intentionalLeaving = 208,
+	focusLostBackground = 207,
+	focusLost = 209,
+	newConnection,
+	platformParentalControlsBlock,
+	platformUserBlock
+};
+
 pub const ReliablePacket = struct {
-    allocator: std.mem.Allocator,
+    maybeAllocator: ?std.mem.Allocator = null,
+
     messages: []streamHelpers.Message,
 
     pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !ReliablePacket {
         var packet: ReliablePacket = undefined;
-        packet.allocator = allocator;
+        packet.maybeAllocator = allocator;
 
         var list = std.ArrayList(streamHelpers.Message).init(allocator);
         defer list.deinit();
 
         while (true) {
-            const message = streamHelpers.Message.read(allocator, reader) catch |e| {
+            const message = streamHelpers.Message.initFromReader(allocator, reader) catch |e| {
                 if (e == error.EndOfStream) break;
                 return e;
             };
@@ -102,15 +145,18 @@ pub const ReliablePacket = struct {
     }
 
     pub fn deinit(self: ReliablePacket) void {
+        const allocator = self.maybeAllocator orelse return;
+
         for (self.messages) |message| {
             message.destroy();
         }
-        self.allocator.free(self.messages);
+        allocator.free(self.messages);
     }
 };
 
 pub const HelloPacket = struct {
-    allocator: std.mem.Allocator,
+    maybeAllocator: ?std.mem.Allocator = null,
+
     broadcastVersion: i32,
     customizationName: []const u8,
     authNonce: u32,
@@ -121,7 +167,7 @@ pub const HelloPacket = struct {
 
     pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !HelloPacket {
         var packet: HelloPacket = undefined;
-        packet.allocator = allocator;
+        packet.maybeAllocator = allocator;
 
         _ = try reader.readByte(); // hazel version (hard-coded to 1)
 
@@ -144,8 +190,44 @@ pub const HelloPacket = struct {
     }
 
     pub fn destroy(self: HelloPacket) void {
-        self.allocator.free(self.customizationName);
-        self.allocator.free(self.friendCode);
+        const allocator = self.maybeAllocator orelse return;
+
+        allocator.free(self.customizationName);
+        allocator.free(self.friendCode);
         self.platformData.destroy();
+    }
+};
+
+pub const DisconnectPacket = struct {
+    maybeAllocator: ?std.mem.Allocator = null,
+
+    showReason: bool,
+    reason: DisconnectReason,
+    maybeCustomMessage: ?[]const u8,
+
+    pub fn initFromReader(allocator: std.mem.Allocator, reader: *std.io.AnyReader) !DisconnectPacket {
+        var packet: DisconnectPacket = undefined;
+        packet.maybeAllocator = allocator;
+
+        packet.showReason = (reader.readByte() catch |e| blk: {
+            if (e == error.EndOfStream) break :blk 0;
+            return e;
+        }) == 1;
+
+        const message = try streamHelpers.Message.initFromReader(allocator, reader);
+        var reader2 = message.reader();
+        packet.reason = @enumFromInt(message.tag);
+
+        packet.maybeCustomMessage = switch (packet.reason) {
+            .custom => try streamHelpers.readString(allocator, &reader2),
+            else => null
+        };
+
+        return packet;
+    }
+
+    pub fn destroy(self: DisconnectPacket) void {
+        const allocator = self.maybeAllocator orelse return;
+        if (self.maybeCustomMessage) |customMessage| allocator.free(customMessage);
     }
 };
